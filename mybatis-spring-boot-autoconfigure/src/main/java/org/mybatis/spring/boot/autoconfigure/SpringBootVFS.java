@@ -28,6 +28,7 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.core.io.support.ResourcePatternResolver;
 
 /**
+ * 替代 MyBatis 的 {@link org.apache.ibatis.io.DefaultVFS} 类
  * @author Hans Westerbeek
  * @author Eddú Meléndez
  * @author Kazuki Shimizu

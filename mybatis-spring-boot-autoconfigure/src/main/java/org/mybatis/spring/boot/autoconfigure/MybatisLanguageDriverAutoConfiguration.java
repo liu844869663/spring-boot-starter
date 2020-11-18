@@ -33,6 +33,12 @@ import org.springframework.context.annotation.Configuration;
 /**
  * {@link EnableAutoConfiguration Auto-Configuration} for MyBatis's scripting language drivers.
  *
+ * 使用到的注解说明
+ * {@link ConditionalOnClass}：保证存在 value 中所有的 Class 对象，以确保可以创建它们的实例对象
+ * {@link ConditionalOnMissingClass}：如果 value 中所有类型的 Class 对象都不存在，则注入该 Class 对象
+ * {@link ConditionalOnMissingBean}：当 value 中所有类型的 Bean 不存在才会注入，否则不注入，防止同时注入风险
+ *
+ *
  * @author Kazuki Shimizu
  * @since 2.1.0
  */

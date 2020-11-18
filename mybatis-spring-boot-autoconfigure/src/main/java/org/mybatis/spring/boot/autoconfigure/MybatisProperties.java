@@ -44,16 +44,19 @@ public class MybatisProperties {
 
   /**
    * Location of MyBatis xml config file.
+   * mybatis-config.xml 配置文件的路径
    */
   private String configLocation;
 
   /**
    * Locations of MyBatis mapper files.
+   * XML 映射文件的路径
    */
   private String[] mapperLocations;
 
   /**
    * Packages to search type aliases. (Package delimiters are ",; \t\n")
+   * 需要设置别名的包路径
    */
   private String typeAliasesPackage;
 
@@ -199,11 +202,22 @@ public class MybatisProperties {
     this.configuration = configuration;
   }
 
+  /**
+   * 获取 XML 映射文件路径下的资源对象
+   *
+   * @return Resource 资源数组
+   */
   public Resource[] resolveMapperLocations() {
     return Stream.of(Optional.ofNullable(this.mapperLocations).orElse(new String[0]))
         .flatMap(location -> Stream.of(getResources(location))).toArray(Resource[]::new);
   }
 
+  /**
+   * 获取某个路径下的资源
+   *
+   * @param location 路径
+   * @return Resource 资源数组
+   */
   private Resource[] getResources(String location) {
     try {
       return resourceResolver.getResources(location);

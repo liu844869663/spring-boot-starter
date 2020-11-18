@@ -65,12 +65,20 @@ import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
 
 /**
- * {@link EnableAutoConfiguration Auto-Configuration} for Mybatis. Contributes a {@link SqlSessionFactory} and a
- * {@link SqlSessionTemplate}.
+ * {@link EnableAutoConfiguration Auto-Configuration} for Mybatis.
+ * Contributes a {@link SqlSessionFactory} and a {@link SqlSessionTemplate}.
  *
- * If {@link org.mybatis.spring.annotation.MapperScan} is used, or a configuration file is specified as a property,
- * those will be considered, otherwise this auto-configuration will attempt to register mappers based on the interface
+ * If {@link org.mybatis.spring.annotation.MapperScan} is used, or a configuration file is specified as a property, those will be considered,
+ * otherwise this auto-configuration will attempt to register mappers based on the interface
  * definitions in or under the root auto-configuration package.
+ *
+ * 使用到的注解说明
+ * {@link ConditionalOnClass}：保证存在 value 中所有的 Class 对象，以确保可以创建它们的实例对象
+ * {@link ConditionalOnSingleCandidate}：保证存在 value 类型对应的 Bean
+ * {@link EnableConfigurationProperties}：注入 value 中所有的类型的 Bean
+ * {@link AutoConfigureAfter}：在加载 value 中的所有类之后注入当前 Bean
+ * {@link ConditionalOnMissingBean}：当 value 中所有类型的 Bean 不存在才会注入，否则不注入，防止同时注入风险
+ *
  *
  * @author Eddú Meléndez
  * @author Josh Long
@@ -86,6 +94,9 @@ public class MybatisAutoConfiguration implements InitializingBean {
 
   private static final Logger logger = LoggerFactory.getLogger(MybatisAutoConfiguration.class);
 
+  /**
+   * MyBatis 配置信息
+   */
   private final MybatisProperties properties;
 
   private final Interceptor[] interceptors;
@@ -126,15 +137,29 @@ public class MybatisAutoConfiguration implements InitializingBean {
     }
   }
 
+  /**
+   * 不存在同类型则注入当前 Bean（DefaultSqlSessionFactory），存在则不注入
+   *
+   * @param dataSource 数据源
+   * @return SqlSessionFactory 对象
+   */
   @Bean
   @ConditionalOnMissingBean
   public SqlSessionFactory sqlSessionFactory(DataSource dataSource) throws Exception {
+    // <1> 创建一个 SqlSessionFactoryBean 对象，在 mybatis-spring 子项目中
     SqlSessionFactoryBean factory = new SqlSessionFactoryBean();
+    // <2> 设置数据源
     factory.setDataSource(dataSource);
+    // <3> 设置虚拟文件系统为 SpringBootVFS 对象
     factory.setVfs(SpringBootVFS.class);
+    /*
+     * <4> 接下来设置一些属性
+     */
+    // 如果配置了 mybatis-config.xml 配置文件
     if (StringUtils.hasText(this.properties.getConfigLocation())) {
       factory.setConfigLocation(this.resourceLoader.getResource(this.properties.getConfigLocation()));
     }
+    // <5> 应用 Configuration 对象
     applyConfiguration(factory);
     if (this.properties.getConfigurationProperties() != null) {
       factory.setConfigurationProperties(this.properties.getConfigurationProperties());
@@ -145,6 +170,7 @@ public class MybatisAutoConfiguration implements InitializingBean {
     if (this.databaseIdProvider != null) {
       factory.setDatabaseIdProvider(this.databaseIdProvider);
     }
+    // 如果配置了需要设置别名包路径
     if (StringUtils.hasLength(this.properties.getTypeAliasesPackage())) {
       factory.setTypeAliasesPackage(this.properties.getTypeAliasesPackage());
     }
@@ -157,33 +183,49 @@ public class MybatisAutoConfiguration implements InitializingBean {
     if (!ObjectUtils.isEmpty(this.typeHandlers)) {
       factory.setTypeHandlers(this.typeHandlers);
     }
+    // 如果配置了 XML 映射文件路径
     if (!ObjectUtils.isEmpty(this.properties.resolveMapperLocations())) {
       factory.setMapperLocations(this.properties.resolveMapperLocations());
     }
+    // 获取 SqlSessionFactoryBean 对象中属性的名称
     Set<String> factoryPropertyNames = Stream
-        .of(new BeanWrapperImpl(SqlSessionFactoryBean.class).getPropertyDescriptors()).map(PropertyDescriptor::getName)
-        .collect(Collectors.toSet());
+            .of(new BeanWrapperImpl(SqlSessionFactoryBean.class).getPropertyDescriptors())
+            .map(PropertyDescriptor::getName)
+            .collect(Collectors.toSet());
     Class<? extends LanguageDriver> defaultLanguageDriver = this.properties.getDefaultScriptingLanguageDriver();
+    // 如果包含了 scriptingLanguageDrivers 属性，并且存在语言驱动类
     if (factoryPropertyNames.contains("scriptingLanguageDrivers") && !ObjectUtils.isEmpty(this.languageDrivers)) {
       // Need to mybatis-spring 2.0.2+
+      // 设置语言驱动类
       factory.setScriptingLanguageDrivers(this.languageDrivers);
       if (defaultLanguageDriver == null && this.languageDrivers.length == 1) {
         defaultLanguageDriver = this.languageDrivers[0].getClass();
       }
     }
+    // 如果包含了 defaultScriptingLanguageDriver 属性
     if (factoryPropertyNames.contains("defaultScriptingLanguageDriver")) {
       // Need to mybatis-spring 2.0.2+
+      // 设置默认的语言驱动类
       factory.setDefaultScriptingLanguageDriver(defaultLanguageDriver);
     }
 
+    // <6> 这里会初始化（通过 afterPropertiesSet() 方法），返回一个 DefaultSqlSessionFactory 对象
     return factory.getObject();
   }
 
+  /**
+   * 应用 Configuration 对象
+   */
   private void applyConfiguration(SqlSessionFactoryBean factory) {
     Configuration configuration = this.properties.getConfiguration();
     if (configuration == null && !StringUtils.hasText(this.properties.getConfigLocation())) {
+      // 如果没有自定义 Configuration 对象，也没有定义 configLocation 配置文件，则直接创建
       configuration = new Configuration();
     }
+    /*
+     * 如果 Configuration 不为 null，并且 ConfigurationCustomizer 处理器不为空
+     * 则对该 Configuration 对象进行自定义处理
+     */
     if (configuration != null && !CollectionUtils.isEmpty(this.configurationCustomizers)) {
       for (ConfigurationCustomizer customizer : this.configurationCustomizers) {
         customizer.customize(configuration);
@@ -192,9 +234,16 @@ public class MybatisAutoConfiguration implements InitializingBean {
     factory.setConfiguration(configuration);
   }
 
+  /**
+   * 不存在类型则注入当前 Bean（SqlSessionTemplate），存在则不注入
+   *
+   * @param sqlSessionFactory SqlSessionFactory 对象
+   * @return SqlSessionTemplate 对象
+   */
   @Bean
   @ConditionalOnMissingBean
   public SqlSessionTemplate sqlSessionTemplate(SqlSessionFactory sqlSessionFactory) {
+    // 获取执行器类型，默认 SIMPLE
     ExecutorType executorType = this.properties.getExecutorType();
     if (executorType != null) {
       return new SqlSessionTemplate(sqlSessionFactory, executorType);
@@ -222,16 +271,20 @@ public class MybatisAutoConfiguration implements InitializingBean {
 
       logger.debug("Searching for mappers annotated with @Mapper");
 
+      // <1> 获取到 Spring Boot 的基础包路径
       List<String> packages = AutoConfigurationPackages.get(this.beanFactory);
       if (logger.isDebugEnabled()) {
         packages.forEach(pkg -> logger.debug("Using auto-configuration base package '{}'", pkg));
       }
 
+      // <2> 生成一个 BeanDefinition 构建器，用于构建 MapperScannerConfigurer 的 BeanDefinition 对象
       BeanDefinitionBuilder builder = BeanDefinitionBuilder.genericBeanDefinition(MapperScannerConfigurer.class);
       builder.addPropertyValue("processPropertyPlaceHolders", true);
+      // <3> 设置 @Mapper 注解的接口才会被当成 Mapper 接口
       builder.addPropertyValue("annotationClass", Mapper.class);
       builder.addPropertyValue("basePackage", StringUtils.collectionToCommaDelimitedString(packages));
       BeanWrapper beanWrapper = new BeanWrapperImpl(MapperScannerConfigurer.class);
+      // 获取 MapperScannerConfigurer 的属性名称
       Set<String> propertyNames = Stream.of(beanWrapper.getPropertyDescriptors()).map(PropertyDescriptor::getName)
           .collect(Collectors.toSet());
       if (propertyNames.contains("lazyInitialization")) {
@@ -242,6 +295,7 @@ public class MybatisAutoConfiguration implements InitializingBean {
         // Need to mybatis-spring 2.0.6+
         builder.addPropertyValue("defaultScope", "${mybatis.mapper-default-scope:}");
       }
+      // <4> 添加 一个 MapperScannerConfigurer 的 BeanDefinition 对象，也就是注入一个 MapperScannerConfigurer 对象到容器中
       registry.registerBeanDefinition(MapperScannerConfigurer.class.getName(), builder.getBeanDefinition());
     }
 
@@ -253,8 +307,12 @@ public class MybatisAutoConfiguration implements InitializingBean {
   }
 
   /**
-   * If mapper registering configuration or mapper scanning configuration not present, this configuration allow to scan
-   * mappers based on the same component-scanning path as Spring Boot itself.
+   * If mapper registering configuration or mapper scanning configuration not present,
+   * this configuration allow to scan mappers based on the same component-scanning path as Spring Boot itself.
+   *
+   * 如果 MapperFactoryBean 和 MapperScannerConfigurer 类型的 Bean 都不存在则注入该 Bean，
+   * 通过 `@Import(AutoConfiguredMapperScannerRegistrar.class)` 会去扫描 Spring Boot 项目的基础包路径，
+   * 带有 `@Mapper` 注解的接口会被当成 Mapper接口 进行解析
    */
   @org.springframework.context.annotation.Configuration
   @Import(AutoConfiguredMapperScannerRegistrar.class)
