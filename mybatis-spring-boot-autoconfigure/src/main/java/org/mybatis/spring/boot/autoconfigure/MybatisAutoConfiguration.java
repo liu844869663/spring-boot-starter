@@ -237,6 +237,12 @@ public class MybatisAutoConfiguration implements InitializingBean {
   /**
    * 不存在类型则注入当前 Bean（SqlSessionTemplate），存在则不注入
    *
+   * 这里怎么才能被 {@link MapperFactoryBean} 注入 sqlSessionTemplate 属性为当前 Bean 呢？
+   * 在 {@link org.mybatis.spring.mapper.ClassPathMapperScanner} 的 processBeanDefinitions 方法中你会发现，
+   * 如果没有配置 sqlSession 相关配置，则 explicitFactoryUsed 为 false，
+   * 那么就会设置该 MapperFactoryBean 的 AutowireMode 为 `AUTOWIRE_BY_TYPE`，
+   * 也就是说通过属性类型注入值，通过 set 方法来赋值，就会找到下面这个 SqlSessionTemplate 对象了
+   *
    * @param sqlSessionFactory SqlSessionFactory 对象
    * @return SqlSessionTemplate 对象
    */
